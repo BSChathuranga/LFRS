@@ -22,12 +22,12 @@ jobs:
 
       - name: Build & Push Backend
         run: |
-          docker build -t $IMAGE_BACKEND ./backend
+          docker build -t $IMAGE_BACKEND ./Backend
           docker push $IMAGE_BACKEND
 
       - name: Build & Push Frontend
         run: |
-          docker build -t $IMAGE_FRONTEND ./frontend
+          docker build -t $IMAGE_FRONTEND ./Frontend
           docker push $IMAGE_FRONTEND
 
       - name: Set up SSH Agent
