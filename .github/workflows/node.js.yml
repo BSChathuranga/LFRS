@@ -1,0 +1,65 @@
+name: CI/CD to EC2 with Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_BACKEND: sandunchathuranga/lfrs-backend:latest
+      IMAGE_FRONTEND: sandunchathuranga/lfrs-frontend:latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Build & Push Backend
+        run: |
+          docker build -t $IMAGE_BACKEND ./backend
+          docker push $IMAGE_BACKEND
+
+      - name: Build & Push Frontend
+        run: |
+          docker build -t $IMAGE_FRONTEND ./frontend
+          docker push $IMAGE_FRONTEND
+
+      - name: Set up SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Deploy on EC2
+        run: |
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+
+            # Create backend.env
+            echo "MONGODB_URI=${{ secrets.MONGODB_URI }}" > /home/ubuntu/backend.env
+            echo "PORT=8000" >> /home/ubuntu/backend.env
+            echo "CLERK_SECRET_KEY=${{ secrets.VITE_CLERK_SECRET_KEY }}" >> /home/ubuntu/backend.env
+            echo "VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}" >> /home/ubuntu/backend.env
+
+            # Create frontend.env
+            echo "VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}" > /home/ubuntu/frontend.env
+
+            # Pull latest Docker images
+            docker pull $IMAGE_BACKEND
+            docker pull $IMAGE_FRONTEND
+
+            # Stop and remove old containers if they exist
+            docker stop backend || true && docker rm backend || true
+            docker stop frontend || true && docker rm frontend || true
+
+            # Run backend container
+            docker run -d --name backend --env-file /home/ubuntu/backend.env -p 8000:8000 $IMAGE_BACKEND
+
+            # Run frontend container
+            docker run -d --name frontend --env-file /home/ubuntu/frontend.env -p 80:80 $IMAGE_FRONTEND
+
+          EOF
